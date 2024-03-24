@@ -1,7 +1,3 @@
-# Author: aqeelanwar
-# Created: 12 June,2020, 7:06 PM
-# Email: aqeel.anwar@gatech.edu
-
 # Icons: https://www.flaticon.com/authors/freepik
 from tkinter import *
 import random
@@ -13,7 +9,7 @@ from PIL import ImageTk,Image
 size_of_board = 1000
 rows = 20
 cols = 20
-DELAY = 50
+DELAY = 100
 snake_initial_length = 3
 symbol_size = (size_of_board / 3 - size_of_board / 8) / 2
 symbol_thickness = 2
@@ -24,6 +20,7 @@ Green_color = "#7BC043"
 BLUE_COLOR_LIGHT = '#67B0CF'
 RED_COLOR_LIGHT = '#EE7E77'
 BLACK_COLOR = '#000000'
+GREY_COLOR = '#808080'
 
 
 class SnakeAndApple:
@@ -38,13 +35,17 @@ class SnakeAndApple:
         # Input from user in form of clicks and keyboard
         self.window.bind("<Key>", self.key_input)
         self.window.bind("<Button-1>", self.mouse_input)
-        self.enemy_shapes = ["dot", "snake", "square"]
+        self.enemy_shapes = ["dot", "snake", "cross", "pyramid"]
+        self.bonus_timer = 60
+        self.bonuses = ["armor"]
+        self.bonus_placed = False
         self.play_again()
         self.begin = False
 
     def initialize_board(self):
         self.board = []
         self.apple_obj = []
+        self.bonus_obj = []
         self.old_apple_cell = []
 
         for i in range(rows):
@@ -64,6 +65,7 @@ class SnakeAndApple:
     def initialize_snake(self):
         self.snake = []
         self.crashed = False
+        self.has_armor = False
         self.snake_heading = "Right"
         self.last_key = self.snake_heading
         self.forbidden_actions = {}
@@ -74,56 +76,49 @@ class SnakeAndApple:
         self.snake_objects = []
         for i in range(snake_initial_length):
             self.snake.append((i, 0))
+
+    def create_enemy_shape(self, shape):
+        enemy_shape = []
+        if shape in self.enemy_shapes:
+            match shape:
+                case "dot":
+                    enemy_shape = [(rows - 1, cols - 1)]
+                case "snake":
+                    enemy_shape = [(i, cols - 1) for i in range(0, rows)]
+                case "cross":
+                    enemy_shape = [(rows - 2, cols - 3), (rows - 3, cols - 2), (rows - 2, cols - 1), (rows - 1, cols - 2), (rows - 2, cols - 2)]
+                case "pyramid":
+                    enemy_shape = [(rows - 1, cols - 1), (rows - 2, cols - 1), (rows - 3, cols - 1), (rows - 4, cols - 1), (rows - 5, cols - 1), (rows - 2, cols - 2), (rows - 3, cols - 2), (rows - 4, cols - 2), (rows - 3, cols - 3)]
+        return enemy_shape
     
     def initialize_enemy(self):
-        self.enemy = [(rows - 1, cols - 1)]
+        self.enemy_shape = "pyramid"
+        self.enemy = self.create_enemy_shape(self.enemy_shape)
         self.enemy_objects = []
-        self.directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
-        self.direction_index = 2
         self.enemy_delay = 0
+        self.enemy_stunned = False
+        self.stun_duration = 30
 
-    def display_enemy(self):
-        if self.enemy_objects != []:
-            self.canvas.delete(self.enemy_objects.pop(0))
-        for i, cell in enumerate(self.enemy):
-            enemy_cell = cell
-            row_h = int(size_of_board / rows)
-            col_w = int(size_of_board / cols)
-            x1 = enemy_cell[0] * row_h
-            y1 = enemy_cell[1] * col_w
-            x2 = x1 + row_h
-            y2 = y1 + col_w
-            self.enemy_objects.append(
-                self.canvas.create_rectangle(
-                    x1, y1, x2, y2, fill=BLACK_COLOR, outline=BLACK_COLOR
-                )
-            )
-    
-    def update_enemy(self):
-        if self.enemy_delay < 1:
-            self.enemy_delay += 1
-        else:
-            enemy = np.array(self.enemy[0])
-            head = np.array(self.snake[-1])
-            diff = enemy - head
-            diff = (int(diff[0]), int(diff[1]))
-            if np.abs(diff[0]) > np.abs(diff[1]):
-                if diff[0] > 0:
-                    self.enemy[0] = tuple(enemy + np.array([-1, 0])) # Left
-                else:
-                    self.enemy[0] = tuple(enemy + np.array([1, 0])) # Right
-            else:
-                if diff[1] > 0:
-                    self.enemy[0] = tuple(enemy + np.array([0, -1])) # Top
-                else:
-                    self.enemy[0] = tuple(enemy + np.array([0, 1])) # Down
-            self.enemy_delay = 0
-            
-        self.display_enemy()
+    def delete_enemy_objects(self, shape):
+
+        if shape in self.enemy_shapes:
+            if shape == "dot":
+                self.canvas.delete(self.enemy_objects.pop(0))
+            elif shape == "snake":
+                for i in self.enemy:
+                    self.canvas.delete(self.enemy_objects.pop(0))
+            elif shape == "cross":
+                for i in self.enemy:
+                    self.canvas.delete(self.enemy_objects.pop(0))
+            elif shape == "pyramid":
+                for i in self.enemy:
+                    self.canvas.delete(self.enemy_objects.pop(0))
     
 
     def play_again(self):
         self.canvas.delete("all")
+        self.bonus_placed = False
+        self.bonus_timer = 60
         self.initialize_board()
         self.initialize_snake()
         self.initialize_enemy()
@@ -149,7 +144,7 @@ class SnakeAndApple:
     def display_gameover(self):
         score = len(self.snake)
         self.canvas.delete("all")
-        score_text = "Scores \n"
+        score_text = "Score: \n"
 
         # put gif image on canvas
         # pic's upper left corner (NW) on the canvas is at x=50 y=10
@@ -200,13 +195,45 @@ class SnakeAndApple:
             x1, y1, x2, y2, fill=RED_COLOR_LIGHT, outline=BLUE_COLOR,
         )
 
+
+    def place_bonus(self):
+        unoccupied_cells = set(self.board) - set(self.snake) - set(self.enemy) - set(self.apple_cell)
+        self.bonus_cell = random.choice(list(unoccupied_cells))
+        row_h = int(size_of_board / rows)
+        col_w = int(size_of_board / cols)
+        x1 = self.bonus_cell[0] * row_h
+        y1 = self.bonus_cell[1] * col_w
+        x2 = x1 + row_h
+        y2 = y1 + col_w
+        self.bonus_obj = self.canvas.create_rectangle(
+            x1, y1, x2, y2, fill=GREY_COLOR, outline=BLACK_COLOR,
+        )
+
+    
+    def display_enemy(self):
+        if self.enemy_objects != []:
+            self.delete_enemy_objects(self.enemy_shape)
+        for i, cell in enumerate(self.enemy):
+            enemy_cell = cell
+            row_h = int(size_of_board / rows)
+            col_w = int(size_of_board / cols)
+            x1 = enemy_cell[0] * row_h
+            y1 = enemy_cell[1] * col_w
+            x2 = x1 + row_h
+            y2 = y1 + col_w
+            self.enemy_objects.append(
+                self.canvas.create_rectangle(
+                    x1, y1, x2, y2, fill=BLACK_COLOR, outline=BLACK_COLOR
+                )
+            )
+
+
     def display_snake(self, mode=""):
         # Remove tail from display if it exists
         if self.snake_objects != []:
             self.canvas.delete(self.snake_objects.pop(0))
         if mode == "complete":
             for i, cell in enumerate(self.snake):
-                # print(cell)
                 row_h = int(size_of_board / rows)
                 col_w = int(size_of_board / cols)
                 x1 = cell[0] * row_h
@@ -220,18 +247,25 @@ class SnakeAndApple:
                 )
         else:
             # only update head
-            cell = self.snake[-1] # Pobieram komórkę głowy snake'a np. (0,3)
+            cell = self.snake[-1]
             row_h = int(size_of_board / rows)
             col_w = int(size_of_board / cols)
             x1 = cell[0] * row_h
             y1 = cell[1] * col_w
             x2 = x1 + row_h
             y2 = y1 + col_w
-            self.snake_objects.append(
-                self.canvas.create_rectangle(
-                    x1, y1, x2, y2, fill=BLUE_COLOR, outline=RED_COLOR,
+            if not self.has_armor:
+                self.snake_objects.append(
+                    self.canvas.create_rectangle(
+                        x1, y1, x2, y2, fill=BLUE_COLOR, outline=RED_COLOR,
+                    )
                 )
-            )
+            else:
+                self.snake_objects.append(
+                    self.canvas.create_rectangle(
+                        x1, y1, x2, y2, fill=GREY_COLOR, outline=RED_COLOR,
+                    )
+                )
             if self.snake[0] == self.old_apple_cell: # Here snake increases
                 self.snake.insert(0, self.old_apple_cell) # Firt value of self.snake is a tail
                 self.old_apple_cell = [] # Clear apple position
@@ -248,6 +282,7 @@ class SnakeAndApple:
                         x1, y1, x2, y2, fill=BLUE_COLOR, outline=RED_COLOR
                     ),
                 )
+
             self.window.update() # Window refresh
 
     # ------------------------------------------------------------------
@@ -258,41 +293,128 @@ class SnakeAndApple:
         # Check if it hit the wall or its own body
         tail = self.snake[0]
         head = self.snake[-1]
+
         if tail != self.old_apple_cell:
             self.snake.pop(0)
+
+        if self.bonus_placed:
+            if head == self.bonus_cell:
+                self.canvas.delete(self.bonus_obj)
+                self.has_armor = True
+                self.bonus_placed = False
+
         if key == "Left":
             self.snake.append((head[0] - 1, head[1]))
+
         elif key == "Right":
             self.snake.append((head[0] + 1, head[1]))
+
         elif key == "Up":
             self.snake.append((head[0], head[1] - 1))
+
         elif key == "Down":
             self.snake.append((head[0], head[1] + 1))
 
         head = self.snake[-1]
+
         if (
                 head[0] > cols - 1
                 or head[0] < 0
                 or head[1] > rows - 1
                 or head[1] < 0
                 or len(set(self.snake)) != len(self.snake)
-                or head == self.enemy[0]
         ):
-            # Hit the wall / Hit on body / Hit the enemy 
+            # Hit the wall / Hit on body
             self.crashed = True
+
+            # Hit on enemy
+        if any(head == enemy_pos for enemy_pos in self.enemy):
+            if self.has_armor:
+                self.enemy_stunned = True
+                self.has_armor = False
+            else:
+                if not self.enemy_stunned:
+                    self.crashed = True
+
         elif self.apple_cell == head:
             # Got the apple
             self.old_apple_cell = self.apple_cell
             self.canvas.delete(self.apple_obj)
             self.place_apple()
             self.display_snake()
+
         else:
             self.snake_heading = key
             self.display_snake()
 
+
+    def update_enemy(self):
+        if self.enemy_stunned:
+            if self.stun_duration != 0:
+                self.stun_duration -= 1
+                return
+            else:
+                self.enemy_stunned = False
+                self.stun_duration = 30
+
+        if self.enemy_delay < 1:
+            self.enemy_delay += 1
+
+        else:
+            if self.enemy_shape == "cross" or self.enemy_shape == "pyramid":
+                enemy_head = np.array(self.enemy[-1])
+                snake_head = np.array(self.snake[-1])
+                diff = enemy_head - snake_head
+                diff = (int(diff[0]), int(diff[1]))
+                if np.abs(diff[0]) > np.abs(diff[1]):
+                    if diff[0] > 0:
+                        direction = np.array([-1, 0]) # Left
+                    else:
+                        direction = np.array([1, 0]) # Right
+                else:
+                    if diff[1] > 0:
+                        direction = np.array([0, -1]) # Top
+                    else:
+                        direction = np.array([0, 1]) # Down
+
+                x = len(self.enemy)
+
+                for i in range(x):
+                    self.enemy.append(tuple(self.enemy[i] + direction))
+
+                for i in range(x):
+                    self.enemy.pop(0)
+                
+            else:
+                enemy_head = np.array(self.enemy[-1])
+                snake_head = np.array(self.snake[-1])
+                diff = enemy_head - snake_head
+                diff = (int(diff[0]), int(diff[1]))
+                self.enemy.pop(0)
+                if np.abs(diff[0]) > np.abs(diff[1]):
+                    if diff[0] > 0:
+                        self.enemy.append(tuple(enemy_head + np.array([-1, 0]))) # Left
+                    else:
+                        self.enemy.append(tuple(enemy_head + np.array([1, 0]))) # Right
+                else:
+                    if diff[1] > 0:
+                        self.enemy.append(tuple(enemy_head + np.array([0, -1]))) # Top
+                    else:
+                        self.enemy.append(tuple(enemy_head + np.array([0, 1]))) # Down
+            self.enemy_delay = 0
+            
+        self.display_enemy()
+
+
     def update(self):
         self.update_enemy()
         self.update_snake(self.last_key)
+        if not self.bonus_placed and not self.has_armor:
+            self.bonus_timer -= 1
+            if self.bonus_timer <= 0:
+                self.place_bonus()
+                self.bonus_placed = True
+                self.bonus_timer = 60
 
     def check_if_key_valid(self, key):
         valid_keys = ["Up", "Down", "Left", "Right"]
@@ -309,7 +431,6 @@ class SnakeAndApple:
             key_pressed = event.keysym
             # Check if the pressed key is a valid key
             if self.check_if_key_valid(key_pressed):
-                # print(key_pressed)
                 self.begin = True
                 self.last_key = key_pressed
 

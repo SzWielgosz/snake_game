@@ -8,7 +8,7 @@ https://github.com/aqeelanwar/Snake-And-Apple
 
 ## Running Snake-And-Apple:
 ```
-cd Snake-And-Apple
+cd snake_game
 python main.py
 ```
 
@@ -22,7 +22,7 @@ python main.py
 </p>
 
 ## Controls
-1. The game begins with snake of length 3 waiting for user input
+1. The game begins with snake of length 3 and the enemy waiting for user input
 2. Keyboard Up, Down, Right, and Left are used to navigate
 3. The result of the game is displayed at the end of the game
 4. Click anywhere on the result screen to play again
