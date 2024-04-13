@@ -7,8 +7,8 @@ from PIL import ImageTk,Image
 
 # Define useful parameters
 size_of_board = 1000
-rows = 20
-cols = 20
+rows = 25
+cols = 25
 DELAY = 100
 snake_initial_length = 3
 symbol_size = (size_of_board / 3 - size_of_board / 8) / 2
@@ -92,7 +92,7 @@ class SnakeAndApple:
         return enemy_shape
     
     def initialize_enemy(self):
-        self.enemy_shape = "pyramid"
+        self.enemy_shape = "snake"
         self.enemy = self.create_enemy_shape(self.enemy_shape)
         self.enemy_objects = []
         self.enemy_delay = 0
@@ -100,7 +100,6 @@ class SnakeAndApple:
         self.stun_duration = 30
 
     def delete_enemy_objects(self, shape):
-
         if shape in self.enemy_shapes:
             if shape == "dot":
                 self.canvas.delete(self.enemy_objects.pop(0))
@@ -123,9 +122,10 @@ class SnakeAndApple:
         self.initialize_snake()
         self.initialize_enemy()
         self.place_apple()
-        self.display_enemy()
         self.display_snake(mode="complete")
+        self.display_enemy()
         self.begin_time = time.time()
+
 
     def mainloop(self):
         while True:
@@ -211,8 +211,6 @@ class SnakeAndApple:
 
     
     def display_enemy(self):
-        if self.enemy_objects != []:
-            self.delete_enemy_objects(self.enemy_shape)
         for i, cell in enumerate(self.enemy):
             enemy_cell = cell
             row_h = int(size_of_board / rows)
@@ -221,69 +219,81 @@ class SnakeAndApple:
             y1 = enemy_cell[1] * col_w
             x2 = x1 + row_h
             y2 = y1 + col_w
-            self.enemy_objects.append(
-                self.canvas.create_rectangle(
-                    x1, y1, x2, y2, fill=BLACK_COLOR, outline=BLACK_COLOR
+            
+            if len(self.enemy_objects) == len(self.enemy):
+                # Move enemy objects to new position
+                self.canvas.coords(self.enemy_objects[i], x1, y1, x2, y2)
+                self.canvas.tag_raise(self.enemy_objects[i]) # If two rectangles overlap, display this one on the screen
+            else:
+                # If there's no enemy objects, create them
+                rectangle = self.canvas.create_rectangle(
+                        x1, y1, x2, y2, fill=BLACK_COLOR, outline=BLACK_COLOR
+                    )
+                self.enemy_objects.append(
+                    rectangle
                 )
-            )
 
 
     def display_snake(self, mode=""):
-        # Remove tail from display if it exists
-        if self.snake_objects != []:
-            self.canvas.delete(self.snake_objects.pop(0))
         if mode == "complete":
+            # Draw the whole snake
             for i, cell in enumerate(self.snake):
-                row_h = int(size_of_board / rows)
-                col_w = int(size_of_board / cols)
-                x1 = cell[0] * row_h
-                y1 = cell[1] * col_w
-                x2 = x1 + row_h
-                y2 = y1 + col_w
-                self.snake_objects.append(
-                    self.canvas.create_rectangle(
-                        x1, y1, x2, y2, fill=BLUE_COLOR, outline=BLUE_COLOR,
-                    )
-                )
+                self.draw_snake_segment(i, cell)
         else:
-            # only update head
-            cell = self.snake[-1]
-            row_h = int(size_of_board / rows)
-            col_w = int(size_of_board / cols)
-            x1 = cell[0] * row_h
-            y1 = cell[1] * col_w
-            x2 = x1 + row_h
-            y2 = y1 + col_w
-            if not self.has_armor:
-                self.snake_objects.append(
-                    self.canvas.create_rectangle(
-                        x1, y1, x2, y2, fill=BLUE_COLOR, outline=RED_COLOR,
-                    )
-                )
-            else:
-                self.snake_objects.append(
-                    self.canvas.create_rectangle(
-                        x1, y1, x2, y2, fill=GREY_COLOR, outline=RED_COLOR,
-                    )
-                )
-            if self.snake[0] == self.old_apple_cell: # Here snake increases
-                self.snake.insert(0, self.old_apple_cell) # Firt value of self.snake is a tail
-                self.old_apple_cell = [] # Clear apple position
-                tail = self.snake[0]
-                row_h = int(size_of_board / rows) # Create snake square
-                col_w = int(size_of_board / cols)
-                x1 = tail[0] * row_h
-                y1 = tail[1] * col_w
-                x2 = x1 + row_h
-                y2 = y1 + col_w
-                self.snake_objects.insert( # Add new id to tail after eating the apple
-                    0,
-                    self.canvas.create_rectangle(
-                        x1, y1, x2, y2, fill=BLUE_COLOR, outline=RED_COLOR
-                    ),
-                )
+            # Update the whole snake
+            if self.has_armor:
+                self.change_color(color=GREY_COLOR)
+            for i, cell in enumerate(self.snake):
+                if i == len(self.snake) - 1:
+                    # For the head of the snake
+                    self.move_snake_segment(i, cell)
+                else:
+                    # For the rest of the snake's body
+                    self.move_snake_segment(i, self.snake[i])
+                
+            # Check if the snake ate the apple
+            head = self.snake[-1]
+            if head == self.old_apple_cell:
+                # Add a new segment to the snake
+                self.snake.insert(0, self.old_apple_cell)
+                self.draw_snake_segment(0, self.old_apple_cell)
+                self.old_apple_cell = []  # Clear apple position
 
-            self.window.update() # Window refresh
+        self.window.update()  # Refresh the window
+
+
+    def draw_snake_segment(self, index, cell):
+        row_h = int(size_of_board / rows)
+        col_w = int(size_of_board / cols)
+        x1 = cell[0] * row_h
+        y1 = cell[1] * col_w
+        x2 = x1 + row_h
+        y2 = y1 + col_w
+        
+        segment_id = self.canvas.create_rectangle(x1, y1, x2, y2, fill=BLUE_COLOR, outline=RED_COLOR)
+        
+        self.snake_objects.insert(index, segment_id)
+
+    
+    def change_color(self, color):
+        for i in self.snake_objects:
+            self.canvas.itemconfig(i, fill=color)
+    
+
+    def move_snake_segment(self, index, cell):
+        row_h = int(size_of_board / rows)
+        col_w = int(size_of_board / cols)
+        x1 = cell[0] * row_h
+        y1 = cell[1] * col_w
+        x2 = x1 + row_h
+        y2 = y1 + col_w
+        
+        if self.snake_objects:
+            segment_id = self.snake_objects.pop(index)
+            self.canvas.coords(segment_id, x1, y1, x2, y2)
+            self.snake_objects.insert(index, segment_id)
+
+
 
     # ------------------------------------------------------------------
     # Logical Functions:
@@ -332,6 +342,7 @@ class SnakeAndApple:
             if self.has_armor:
                 self.enemy_stunned = True
                 self.has_armor = False
+                self.change_color(color=BLUE_COLOR)
             else:
                 if not self.enemy_stunned:
                     self.crashed = True
@@ -407,8 +418,10 @@ class SnakeAndApple:
 
 
     def update(self):
-        self.update_enemy()
+        print("Snake objects: ", self.snake_objects)
+        print("Enemy objects: ", self.enemy_objects)
         self.update_snake(self.last_key)
+        self.update_enemy()
         if not self.bonus_placed and not self.has_armor:
             self.bonus_timer -= 1
             if self.bonus_timer <= 0:
